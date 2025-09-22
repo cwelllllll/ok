@@ -1,4 +1,4 @@
-package com.example.frigatecamerappv5;
+package com.example.frigatecamerappv6;
 
 import net.majorkernelpanic.streaming.Session;
 import net.majorkernelpanic.streaming.SessionBuilder;
@@ -6,7 +6,6 @@ import net.majorkernelpanic.streaming.gl.SurfaceView;
 import net.majorkernelpanic.streaming.rtsp.RtspServer;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences.Editor;
 import android.content.pm.PackageManager;
@@ -21,9 +20,10 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
-public class MainActivity extends Activity implements Session.Callback {
+public class MainActivity extends AppCompatActivity implements Session.Callback {
 
     private static final String TAG = "MainActivity";
     private final String[] REQUIRED_PERMISSIONS = new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
@@ -137,7 +137,8 @@ public class MainActivity extends Activity implements Session.Callback {
     public void onSessionError(int reason, int streamType, Exception e) {
         Log.e(TAG, "Session error", e);
         runOnUiThread(() -> {
-            Toast.makeText(MainActivity.this, "Session error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            String error = (e.getMessage() != null) ? e.getMessage() : "Unknown error";
+            Toast.makeText(MainActivity.this, "Session error: " + error, Toast.LENGTH_LONG).show();
         });
     }
 

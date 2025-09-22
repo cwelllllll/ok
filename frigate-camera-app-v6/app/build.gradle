@@ -3,12 +3,12 @@ plugins {
 }
 
 android {
-    namespace 'com.example.frigatecamerappv5'
+    namespace 'com.example.frigatecamerappv6'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.frigatecamerappv5"
-        minSdk 21 // libstreaming requires API 16, but modern features like permissions are easier on 21+
+        applicationId "com.example.frigatecamerappv6"
+        minSdk 21
         targetSdk 34
         versionCode 1
         versionName "1.0"
