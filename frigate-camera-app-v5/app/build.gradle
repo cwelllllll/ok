@@ -3,12 +3,12 @@ plugins {
 }
 
 android {
-    namespace 'com.example.frigatecamerappv3'
+    namespace 'com.example.frigatecamerappv5'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.frigatecamerappv3"
-        minSdk 29
+        applicationId "com.example.frigatecamerappv5"
+        minSdk 21 // libstreaming requires API 16, but modern features like permissions are easier on 21+
         targetSdk 34
         versionCode 1
         versionName "1.0"
@@ -26,6 +26,8 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    // For libstreaming's use of older http client
+    useLibrary 'org.apache.http.legacy'
 }
 
 dependencies {
@@ -33,7 +35,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // libstreaming RTSP/RTP library
+    // libstreaming RTSP/RTP library from JitPack
     implementation 'com.github.ar-android:libstreaming:1.0.0'
 
     testImplementation 'junit:junit:4.13.2'
