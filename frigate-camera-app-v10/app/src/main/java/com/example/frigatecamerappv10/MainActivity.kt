@@ -1,4 +1,4 @@
-package com.example.frigatecamerappv9
+package com.example.frigatecamerappv10
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -43,8 +43,24 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ClientListener, Textur
 
         if (!hasPermissions(this, *permissions)) {
             ActivityCompat.requestPermissions(this, permissions, PERMISSIONS_REQUEST_CODE)
+        } else {
+            setupRtsp()
         }
+    }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSIONS_REQUEST_CODE) {
+            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                setupRtsp()
+            } else {
+                toast("Permissions not granted")
+                finish()
+            }
+        }
+    }
+
+    private fun setupRtsp() {
         rtspServerCamera1 = RtspServerCamera1(surfaceView, this, 1935)
         rtspServerCamera1.streamClient.setClientListener(this)
         surfaceView.surfaceTextureListener = this
@@ -70,18 +86,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ClientListener, Textur
                 rtspServerCamera1.switchCamera()
             } catch (e: CameraOpenException) {
                 toast(e.message ?: "Unknown camera error")
-            }
-        }
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSIONS_REQUEST_CODE) {
-            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                // All permissions granted
-            } else {
-                toast("Permissions not granted")
-                finish()
             }
         }
     }
@@ -147,9 +151,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker, ClientListener, Textur
     }
 
     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2 && rtspServerCamera1.isRecording) {
-            //clean up recording if you are using it
-        }
         if (rtspServerCamera1.isStreaming) {
             rtspServerCamera1.stopStream()
             bStartStop.text = "Start"

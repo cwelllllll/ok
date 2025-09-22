@@ -13,5 +13,5 @@ dependencyResolutionManagement {
         maven { url 'https://jitpack.io' }
     }
 }
-rootProject.name = "FrigateCameraAppV9"
+rootProject.name = "FrigateCameraAppV10"
 include ':app'
