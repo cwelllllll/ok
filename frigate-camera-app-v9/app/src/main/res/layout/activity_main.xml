@@ -39,7 +39,8 @@
             android:id="@+id/b_record"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Record" />
+            android:text="Record"
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/b_start_stop"
