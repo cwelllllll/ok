@@ -1,9 +1,10 @@
-package com.example.frigatecamerappv6;
+package com.example.frigatecamerappv7;
 
 import net.majorkernelpanic.streaming.Session;
 import net.majorkernelpanic.streaming.SessionBuilder;
 import net.majorkernelpanic.streaming.gl.SurfaceView;
 import net.majorkernelpanic.streaming.rtsp.RtspServer;
+import net.majorkernelpanic.streaming.video.VideoQuality;
 
 import android.Manifest;
 import android.content.Intent;
@@ -63,6 +64,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback 
                 .setContext(getApplicationContext())
                 .setAudioEncoder(SessionBuilder.AUDIO_NONE)
                 .setVideoEncoder(SessionBuilder.VIDEO_H264)
+                .setVideoQuality(new VideoQuality(1280, 720, 30, 500000)) // Set a standard resolution
                 .setCallback(this)
                 .build();
 
@@ -150,8 +152,12 @@ public class MainActivity extends AppCompatActivity implements Session.Callback 
     @Override
     public void onSessionConfigured() {
         Log.d(TAG, "Session configured.");
-        // Once the session is configured, we can start the stream
-        mSession.start();
+        // Once the session is configured, we can start the stream in a background thread
+        new Thread(() -> {
+            if (mSession != null) {
+                mSession.start();
+            }
+        }).start();
     }
 
     @Override

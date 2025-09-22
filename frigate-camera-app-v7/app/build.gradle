@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.frigatecamerappv6'
+    namespace 'com.example.frigatecamerappv7'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.frigatecamerappv6"
+        applicationId "com.example.frigatecamerappv7"
         minSdk 21
         targetSdk 34
         versionCode 1
