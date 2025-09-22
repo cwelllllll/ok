@@ -1,4 +1,4 @@
-package com.example.frigatecamerappv10
+package com.example.frigatecamerappv11
 
 import android.Manifest
 import android.content.pm.PackageManager

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.frigatecamerappv10'
+    namespace 'com.example.frigatecamerappv11'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.frigatecamerappv10"
+        applicationId "com.example.frigatecamerappv11"
         minSdk 21
         targetSdk 34
         versionCode 1
@@ -33,9 +33,9 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.9.0'
+    implementation 'androidx.core:core-ktx:1.12.0' // Updated for newer AGP
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'com.google.android.material:material:1.11.0' // Updated for newer AGP
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
     // Pedro's RTSP Server and its RootEncoder dependency
