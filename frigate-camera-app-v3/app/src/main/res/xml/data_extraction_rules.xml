@@ -5,7 +5,7 @@
         <!-- Use <include> and <exclude> to control what is backed up. -->
     </cloud-backup>
     <device-transfer>
-        <!-- TODO: Add rules for what to transfer to another. -->
+        <!-- TODO: Add rules for what to transfer to another device. -->
         <!-- Use <include> and <exclude> to control what is transferred. -->
     </device-transfer>
 </data-extraction-rules>
