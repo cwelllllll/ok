@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
                     binding.bStartStop.text = "Stop Stream"
                     rtspCamera2.startStream(endpoint)
-                    binding.tvUrl.text = "rtsp://${rtspCamera2.serverIp}:${rtspCamera2.serverPort}${endpoint}"
+                    // The URL will be set in the onConnectionStarted callback
                 } else {
                     Toast.makeText(this, "Error preparing stream", Toast.LENGTH_SHORT).show()
                 }
@@ -89,7 +89,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     override fun onConnectionStarted(url: String) {
-        // Called when server starts listening
+        // Called when server starts listening. The 'url' parameter contains the full RTSP URL.
+        runOnUiThread {
+            binding.tvUrl.text = url
+        }
     }
 
     override fun onConnectionSuccess() {
