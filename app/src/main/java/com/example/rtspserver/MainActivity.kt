@@ -8,9 +8,11 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.lifecycleScope
 import com.example.rtspserver.databinding.ActivityMainBinding
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtsp.RtspCamera2
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback {
 
@@ -39,32 +41,41 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
         binding.surfaceView.holder.addCallback(this)
 
         binding.bStartStop.setOnClickListener {
-            if (!rtspCamera2.isStreaming) {
-                if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
-                    binding.bStartStop.text = "Stop Stream"
-                    rtspCamera2.startStream("/live/pedro")
-                    // The URL will be set in the onConnectionStarted callback
+            lifecycleScope.launch {
+                if (!rtspCamera2.isStreaming) {
+                    // Te operacje mogą blokować wątek UI, wykonaj je w tle
+                    if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
+                        binding.bStartStop.text = "Stop Stream"
+                        rtspCamera2.startStream("/live/pedro")
+                    } else {
+                        Toast.makeText(this@MainActivity, "Error preparing stream", Toast.LENGTH_SHORT).show()
+                    }
                 } else {
-                    Toast.makeText(this, "Error preparing stream", Toast.LENGTH_SHORT).show()
+                    binding.bStartStop.text = "Start Stream"
+                    rtspCamera2.stopStream()
+                    binding.tvUrl.text = ""
                 }
-            } else {
-                binding.bStartStop.text = "Start Stream"
-                rtspCamera2.stopStream()
-                binding.tvUrl.text = ""
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Restart the preview when the activity is resumed and the surface is valid.
+        if (hasPermissions() && !rtspCamera2.isOnPreview && binding.surfaceView.holder.surface.isValid) {
+            rtspCamera2.startPreview()
         }
     }
 
     override fun onPause() {
         super.onPause()
-        // Stop the stream and preview when the activity is paused
+        // Stop the stream and preview to release the camera while the app is in the background.
         if (rtspCamera2.isStreaming) {
             rtspCamera2.stopStream()
             binding.bStartStop.text = "Start Stream"
             binding.tvUrl.text = ""
         }
-        // This is critical to release the camera before the surface is destroyed
-        if (rtspCamera2.isRecording || rtspCamera2.isOnPreview) {
+        if (rtspCamera2.isOnPreview) {
             rtspCamera2.stopPreview()
         }
     }
@@ -129,17 +140,19 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        // You can handle orientation changes here by restarting the preview.
-        // This is also called on start up, so we need to check for permissions.
-        rtspCamera2.stopPreview()
-        if (hasPermissions()) {
-            rtspCamera2.startPreview()
-        }
+        // The library should handle surface changes. Forcing a stop/start here can
+        // cause race conditions. If you need to handle orientation changes, you would
+        // add more specific logic here, but the previous implementation was unstable.
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        // When the surface is destroyed, we must stop the preview
-        if (rtspCamera2.isRecording || rtspCamera2.isOnPreview) {
+        super.surfaceDestroyed(holder)
+        // When the surface is destroyed, we must stop the stream and preview.
+        // This is a final cleanup step that mirrors onPause.
+        if (rtspCamera2.isStreaming) {
+            rtspCamera2.stopStream()
+        }
+        if (rtspCamera2.isOnPreview) {
             rtspCamera2.stopPreview()
         }
     }
