@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Wifi Displayer</string>
+    <string name="refresh_button_text">Odśwież</string>
+</resources>
