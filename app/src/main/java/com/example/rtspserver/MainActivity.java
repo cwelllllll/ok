@@ -47,7 +47,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         mButton = findViewById(R.id.start_stop_button);
         mUrlTextView = findViewById(R.id.rtsp_url);
 
-        // Start the server service once
+        // Start the server service once. It will live as long as the app is running.
         startService(new Intent(this, RtspServer.class));
 
         if (!hasPermissions()) {
@@ -87,10 +87,9 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     private String getIpAddress() {
         try {
-            // Find Wi-Fi interface first
             for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
                 NetworkInterface intf = en.nextElement();
-                if (intf.getName().contains("wlan")) {
+                if (intf.getName().toLowerCase().contains("wlan")) {
                     for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements();) {
                         InetAddress inetAddress = enumIpAddr.nextElement();
                         if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
@@ -99,7 +98,11 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
                     }
                 }
             }
-            // Fallback to any other interface
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        // Fallback to any other interface if Wi-Fi not found
+        try {
             for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
                 NetworkInterface intf = en.nextElement();
                 for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements();) {
@@ -119,7 +122,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     public void onResume() {
         super.onResume();
         if (mSession != null && mSession.isStreaming()) {
-            mButton.setText("Stop Server");
+            mButton.setText("Stop");
         }
     }
 
@@ -134,10 +137,6 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (mSession != null) {
-            new Thread(() -> mSession.release()).start();
-            mSession = null;
-        }
         stopService(new Intent(this, RtspServer.class));
     }
 
@@ -147,9 +146,9 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     @Override
     public void onSessionError(int reason, int streamType, Exception e) {
         runOnUiThread(() -> {
-            String error = "Session error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error");
-            Toast.makeText(MainActivity.this, error, Toast.LENGTH_SHORT).show();
-            mButton.setText("Start Server");
+            String error = "Session error: " + (e != null ? e.getMessage() : "Unknown error");
+            Toast.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
+            mButton.setText("Start");
         });
     }
 
@@ -162,7 +161,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     @Override
     public void onSessionStarted() {
         runOnUiThread(() -> {
-            mButton.setText("Stop Server");
+            mButton.setText("Stop");
             mUrlTextView.setText("rtsp://" + getIpAddress() + ":8086");
         });
     }
@@ -170,14 +169,13 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     @Override
     public void onSessionStopped() {
         runOnUiThread(() -> {
-            mButton.setText("Start Server");
+            mButton.setText("Start");
             mUrlTextView.setText("RTSP URL: ");
         });
     }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        // Every time the surface is created, we create a new session
         mSession = SessionBuilder.getInstance()
                 .setCallback(this)
                 .setSurfaceView(mSurfaceView)
@@ -205,9 +203,13 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        if (mSession != null) {
+        final Session sessionToRelease = mSession;
+        if (sessionToRelease != null) {
             new Thread(() -> {
-                mSession.release();
+                if (sessionToRelease.isStreaming()) {
+                    sessionToRelease.stop();
+                }
+                sessionToRelease.release();
             }).start();
             mSession = null;
         }
