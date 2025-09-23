@@ -1,9 +1,13 @@
 package com.example.rtspserver
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -18,6 +22,7 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
     private lateinit var rtspCamera2: RtspCamera2
     private lateinit var button: Button
     private lateinit var openGlView: OpenGlView
+    private lateinit var tvUrl: TextView
     private val PERMISSIONS_REQUEST_CODE = 1
 
     private val requiredPermissions = arrayOf(
@@ -31,6 +36,7 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
 
         openGlView = findViewById(R.id.surfaceView)
         button = findViewById(R.id.b_start_stop)
+        tvUrl = findViewById(R.id.tv_url)
 
         rtspCamera2 = RtspCamera2(openGlView, this)
 
@@ -43,6 +49,26 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Update button text in case the user comes back to the app
+        if (rtspCamera2.isStreaming) {
+            button.text = "Stop Stream"
+        } else {
+            button.text = "Start Stream"
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Stop stream if it is running to release the camera and microphone
+        if (rtspCamera2.isStreaming) {
+            rtspCamera2.stopStream()
+            button.text = "Start Stream"
+            tvUrl.text = ""
+        }
+    }
+
     private fun hasPermissions(): Boolean {
         return requiredPermissions.all {
             ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
@@ -50,6 +76,10 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
     }
 
     private fun requestPermissions() {
+        if (requiredPermissions.any { shouldShowRequestPermissionRationale(it) }) {
+            // Show an explanation to the user *asynchronously*
+            Toast.makeText(this, "Camera and microphone permissions are required to stream.", Toast.LENGTH_LONG).show()
+        }
         ActivityCompat.requestPermissions(this, requiredPermissions, PERMISSIONS_REQUEST_CODE)
     }
 
@@ -63,7 +93,17 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
             if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                 toggleStream()
             } else {
-                Toast.makeText(this, "Permissions not granted by the user.", Toast.LENGTH_SHORT).show()
+                // If permission is permanently denied, guide the user to settings
+                if (requiredPermissions.any { !shouldShowRequestPermissionRationale(it) }) {
+                    Toast.makeText(this, "Permissions permanently denied. Please enable them in app settings.", Toast.LENGTH_LONG).show()
+                    // Optionally, open app settings
+                    // val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    // val uri = Uri.fromParts("package", packageName, null)
+                    // intent.data = uri
+                    // startActivity(intent)
+                } else {
+                    Toast.makeText(this, "Permissions not granted.", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -74,12 +114,14 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
                 if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
                     button.text = "Stop Stream"
                     rtspCamera2.startStream()
-                    val endpoint = rtspCamera2.getEndPointConnection()
-                    Toast.makeText(this, "RTSP URL: $endpoint", Toast.LENGTH_LONG).show()
+                    tvUrl.text = rtspCamera2.getEndPointConnection()
+                } else {
+                     Toast.makeText(this, "Error preparing stream", Toast.LENGTH_SHORT).show()
                 }
             } else {
                 button.text = "Start Stream"
                 rtspCamera2.stopStream()
+                tvUrl.text = ""
             }
         } catch (e: CameraOpenException) {
             Toast.makeText(this, "Error opening camera: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -88,8 +130,9 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
         }
     }
 
+    // ConnectCheckerRtsp callbacks
     override fun onConnectionStartedRtsp(rtspUrl: String) {
-        // Not used
+        // Not needed for this simple case
     }
 
     override fun onConnectionSuccessRtsp() {
@@ -103,11 +146,12 @@ class MainActivity : AppCompatActivity(), ConnectCheckerRtsp, ActivityCompat.OnR
             Toast.makeText(this, "Connection failed: $reason", Toast.LENGTH_SHORT).show()
             rtspCamera2.stopStream()
             button.text = "Start Stream"
+            tvUrl.text = ""
         }
     }
 
     override fun onNewBitrateRtsp(bitrate: Long) {
-        // Not used
+        // Not needed for this simple case
     }
 
     override fun onDisconnectRtsp() {

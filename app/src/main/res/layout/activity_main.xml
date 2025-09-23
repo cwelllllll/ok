@@ -1,13 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:padding="16dp">
 
     <com.pedro.library.view.OpenGlView
         android:id="@+id/surfaceView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_above="@+id/b_start_stop" />
+        android:layout_above="@+id/tv_url" />
+
+    <TextView
+        android:id="@+id/tv_url"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@+id/b_start_stop"
+        android:layout_marginBottom="8dp"
+        android:gravity="center"
+        android:text="RTSP URL will appear here"
+        android:textIsSelectable="true" />
 
     <Button
         android:id="@+id/b_start_stop"
