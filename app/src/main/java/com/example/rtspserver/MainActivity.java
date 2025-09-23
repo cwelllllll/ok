@@ -16,11 +16,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import net.majorkernelpanic.streaming.Session;
-import net.majorkernelpanic.streaming.SessionBuilder;
-import net.majorkernelpanic.streaming.audio.AudioQuality;
 import net.majorkernelpanic.streaming.gl.SurfaceView;
-import net.majorkernelpanic.streaming.rtsp.RtspServer;
-import net.majorkernelpanic.streaming.video.VideoQuality;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
@@ -31,7 +27,6 @@ import java.util.Enumeration;
 public class MainActivity extends AppCompatActivity implements Session.Callback, SurfaceHolder.Callback {
 
     private final static int PERMISSION_REQUEST_CODE = 1;
-    private Session mSession;
     private SurfaceView mSurfaceView;
     private Button mButton;
     private TextView mUrlTextView;
@@ -47,8 +42,12 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         mButton = findViewById(R.id.start_stop_button);
         mUrlTextView = findViewById(R.id.rtsp_url);
 
-        // Start the server service once. It will live as long as the app is running.
-        startService(new Intent(this, RtspServer.class));
+        // Start the server service once
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(new Intent(this, RtspServer.class));
+        } else {
+            startService(new Intent(this, RtspServer.class));
+        }
 
         if (!hasPermissions()) {
             requestPermissions();
@@ -83,6 +82,19 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     private void initializeApp() {
         mSurfaceView.getHolder().addCallback(this);
+        mButton.setOnClickListener(v -> {
+            RtspServer server = RtspServerSingleton.getServer();
+            if (server != null) {
+                Session session = server.getSession();
+                if (session != null) {
+                    if (session.isStreaming()) {
+                        new Thread(() -> session.stop()).start();
+                    } else {
+                        new Thread(() -> session.start()).start();
+                    }
+                }
+            }
+        });
     }
 
     private String getIpAddress() {
@@ -101,7 +113,6 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         } catch (SocketException e) {
             e.printStackTrace();
         }
-        // Fallback to any other interface if Wi-Fi not found
         try {
             for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
                 NetworkInterface intf = en.nextElement();
@@ -119,27 +130,12 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     }
 
     @Override
-    public void onResume() {
-        super.onResume();
-        if (mSession != null && mSession.isStreaming()) {
-            mButton.setText("Stop");
-        }
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        if (mSession != null && mSession.isStreaming()) {
-            new Thread(() -> mSession.stop()).start();
-        }
-    }
-
-    @Override
     public void onDestroy() {
         super.onDestroy();
         stopService(new Intent(this, RtspServer.class));
     }
 
+    // Session.Callback methods
     @Override
     public void onBitrateUpdate(long bitrate) {}
 
@@ -174,28 +170,18 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         });
     }
 
+    // SurfaceHolder.Callback methods
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        mSession = SessionBuilder.getInstance()
-                .setCallback(this)
-                .setSurfaceView(mSurfaceView)
-                .setPreviewOrientation(90)
-                .setContext(getApplicationContext())
-                .setAudioEncoder(SessionBuilder.AUDIO_AAC)
-                .setAudioQuality(new AudioQuality(16000, 32000))
-                .setVideoEncoder(SessionBuilder.VIDEO_H264)
-                .setVideoQuality(new VideoQuality(320, 240, 20, 500000))
-                .build();
-
-        mButton.setOnClickListener(v -> {
-            if (mSession.isStreaming()) {
-                new Thread(() -> mSession.stop()).start();
-            } else {
-                new Thread(() -> mSession.start()).start();
+        RtspServer server = RtspServerSingleton.getServer();
+        if (server != null) {
+            Session session = server.getSession();
+            if (session != null) {
+                session.setSurfaceView(mSurfaceView);
+                session.setCallback(this);
+                session.startPreview();
             }
-        });
-
-        mSession.startPreview();
+        }
     }
 
     @Override
@@ -203,15 +189,12 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        final Session sessionToRelease = mSession;
-        if (sessionToRelease != null) {
-            new Thread(() -> {
-                if (sessionToRelease.isStreaming()) {
-                    sessionToRelease.stop();
-                }
-                sessionToRelease.release();
-            }).start();
-            mSession = null;
+        RtspServer server = RtspServerSingleton.getServer();
+        if (server != null) {
+            Session session = server.getSession();
+            if (session != null) {
+                session.stopPreview();
+            }
         }
     }
 }
