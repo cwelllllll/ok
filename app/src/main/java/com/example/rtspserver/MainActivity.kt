@@ -146,7 +146,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        super.surfaceDestroyed(holder)
         // When the surface is destroyed, we must stop the stream and preview.
         // This is a final cleanup step that mirrors onPause.
         if (rtspCamera2.isStreaming) {
