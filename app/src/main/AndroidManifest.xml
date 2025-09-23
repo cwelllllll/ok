@@ -11,7 +11,8 @@
         android:allowBackup="true"
         android:icon="@android:drawable/ic_dialog_info"
         android:label="RTSP Server"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RTSPServer">
         <activity
             android:name=".MainActivity"
             android:exported="true">
