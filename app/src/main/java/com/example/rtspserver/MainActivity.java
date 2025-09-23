@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.hardware.Camera;
 import android.os.Bundle;
 import android.view.SurfaceHolder;
 import android.view.View;
@@ -28,6 +29,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements Session.Callback, SurfaceHolder.Callback {
 
@@ -80,6 +82,28 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     }
 
     private void initializeApp() {
+        // Find a supported video quality
+        VideoQuality videoQuality;
+        Camera camera = null;
+        try {
+            camera = Camera.open(0); // 0 is for the back camera
+            Camera.Parameters params = camera.getParameters();
+            List<Camera.Size> supportedSizes = params.getSupportedPreviewSizes();
+            if (supportedSizes.isEmpty()) {
+                videoQuality = new VideoQuality(640, 480, 20, 500000);
+            } else {
+                Camera.Size chosenSize = supportedSizes.get(0);
+                videoQuality = new VideoQuality(chosenSize.width, chosenSize.height, 20, 500000);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            videoQuality = new VideoQuality(640, 480, 20, 500000); // Fallback
+        } finally {
+            if (camera != null) {
+                camera.release();
+            }
+        }
+
         mSurfaceView.getHolder().addCallback(this);
 
         mSession = SessionBuilder.getInstance()
@@ -90,7 +114,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
                 .setAudioEncoder(SessionBuilder.AUDIO_AAC)
                 .setAudioQuality(new AudioQuality(16000, 32000))
                 .setVideoEncoder(SessionBuilder.VIDEO_H264)
-                .setVideoQuality(new VideoQuality(640, 480, 20, 500000))
+                .setVideoQuality(videoQuality)
                 .build();
 
         this.startService(new Intent(this, RtspServer.class));
