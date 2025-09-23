@@ -3,17 +3,16 @@ package com.example.rtspserver
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.SurfaceHolder
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import com.example.rtspserver.databinding.ActivityMainBinding
 import com.pedro.common.ConnectChecker
-import com.pedro.encoder.input.video.CameraOpenException
 import com.pedro.library.rtsp.RtspCamera2
-import java.net.SocketException
 
-class MainActivity : AppCompatActivity(), ConnectChecker {
+class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback {
 
     private lateinit var rtspCamera2: RtspCamera2
     private lateinit var binding: ActivityMainBinding
@@ -23,7 +22,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
             if (permissions.all { it.value }) {
-                toggleStream()
+                // Permissions granted, start the preview
+                rtspCamera2.startPreview()
             } else {
                 Toast.makeText(this, "Permissions not granted.", Toast.LENGTH_SHORT).show()
             }
@@ -35,43 +35,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         setContentView(binding.root)
 
         rtspCamera2 = RtspCamera2(binding.surfaceView, this)
+        // Add the SurfaceHolder.Callback to manage the preview lifecycle
+        binding.surfaceView.holder.addCallback(this)
 
         binding.bStartStop.setOnClickListener {
-            if (!hasPermissions()) {
-                requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
-            } else {
-                toggleStream()
-            }
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        binding.bStartStop.text = if (rtspCamera2.isStreaming) "Stop Stream" else "Start Stream"
-    }
-
-    override fun onPause() {
-        super.onPause()
-        if (rtspCamera2.isStreaming) {
-            rtspCamera2.stopStream()
-            binding.bStartStop.text = "Start Stream"
-            binding.tvUrl.text = ""
-        }
-    }
-
-    private fun hasPermissions(): Boolean {
-        return arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO).all {
-            ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    private fun toggleStream() {
-        try {
-            val endpoint = "/live/pedro"
             if (!rtspCamera2.isStreaming) {
                 if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
                     binding.bStartStop.text = "Stop Stream"
-                    rtspCamera2.startStream(endpoint)
+                    rtspCamera2.startStream("/live/pedro")
                     // The URL will be set in the onConnectionStarted callback
                 } else {
                     Toast.makeText(this, "Error preparing stream", Toast.LENGTH_SHORT).show()
@@ -81,15 +52,30 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 rtspCamera2.stopStream()
                 binding.tvUrl.text = ""
             }
-        } catch (e: CameraOpenException) {
-            Toast.makeText(this, "Error opening camera: ${e.message}", Toast.LENGTH_SHORT).show()
-        } catch (e: SocketException) {
-            Toast.makeText(this, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Stop the stream and preview when the activity is paused
+        if (rtspCamera2.isStreaming) {
+            rtspCamera2.stopStream()
+            binding.bStartStop.text = "Start Stream"
+            binding.tvUrl.text = ""
+        }
+        // This is critical to release the camera before the surface is destroyed
+        if (rtspCamera2.isRecording || rtspCamera2.isOnPreview) {
+            rtspCamera2.stopPreview()
+        }
+    }
+
+    private fun hasPermissions(): Boolean {
+        return arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO).all {
+            ActivityCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     override fun onConnectionStarted(url: String) {
-        // Called when server starts listening. The 'url' parameter contains the full RTSP URL.
         runOnUiThread {
             binding.tvUrl.text = url
         }
@@ -129,6 +115,29 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     override fun onAuthSuccess() {
         runOnUiThread {
             Toast.makeText(this, "Auth success", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // SurfaceHolder.Callback implementation
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        // When the surface is created, start the camera preview if permissions are granted
+        if (hasPermissions()) {
+            rtspCamera2.startPreview()
+        } else {
+            requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+        }
+    }
+
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        // You can handle orientation changes here by restarting the preview
+        rtspCamera2.stopPreview()
+        rtspCamera2.startPreview()
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        // When the surface is destroyed, we must stop the preview
+        if (rtspCamera2.isRecording || rtspCamera2.isOnPreview) {
+            rtspCamera2.stopPreview()
         }
     }
 }
