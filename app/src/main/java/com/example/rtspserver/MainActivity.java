@@ -4,10 +4,8 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.hardware.Camera;
 import android.os.Bundle;
 import android.view.SurfaceHolder;
-import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
@@ -29,7 +27,6 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements Session.Callback, SurfaceHolder.Callback {
 
@@ -38,6 +35,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     private SurfaceView mSurfaceView;
     private Button mButton;
     private TextView mUrlTextView;
+    private boolean mIsInitialized = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,50 +80,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     }
 
     private void initializeApp() {
-        // Find a supported video quality
-        VideoQuality videoQuality;
-        Camera camera = null;
-        try {
-            camera = Camera.open(0); // 0 is for the back camera
-            Camera.Parameters params = camera.getParameters();
-            List<Camera.Size> supportedSizes = params.getSupportedPreviewSizes();
-            if (supportedSizes.isEmpty()) {
-                videoQuality = new VideoQuality(640, 480, 20, 500000);
-            } else {
-                Camera.Size chosenSize = supportedSizes.get(0);
-                videoQuality = new VideoQuality(chosenSize.width, chosenSize.height, 20, 500000);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            videoQuality = new VideoQuality(640, 480, 20, 500000); // Fallback
-        } finally {
-            if (camera != null) {
-                camera.release();
-            }
-        }
-
         mSurfaceView.getHolder().addCallback(this);
-
-        mSession = SessionBuilder.getInstance()
-                .setCallback(this)
-                .setSurfaceView(mSurfaceView)
-                .setPreviewOrientation(90)
-                .setContext(getApplicationContext())
-                .setAudioEncoder(SessionBuilder.AUDIO_AAC)
-                .setAudioQuality(new AudioQuality(16000, 32000))
-                .setVideoEncoder(SessionBuilder.VIDEO_H264)
-                .setVideoQuality(videoQuality)
-                .build();
-
-        this.startService(new Intent(this, RtspServer.class));
-
-        mButton.setOnClickListener(v -> {
-            if (mSession.isStreaming()) {
-                new Thread(() -> mSession.stop()).start();
-            } else {
-                new Thread(() -> mSession.start()).start();
-            }
-        });
     }
 
     private String getIpAddress() {
@@ -164,10 +119,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (mSession != null) {
-            mSession.release();
-        }
-        this.stopService(new Intent(this, RtspServer.class));
+        // The main cleanup is in surfaceDestroyed
     }
 
     @Override
@@ -176,7 +128,8 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     @Override
     public void onSessionError(int reason, int streamType, Exception e) {
         runOnUiThread(() -> {
-            Toast.makeText(MainActivity.this, "Session error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            String error = "Session error: " + (e.getMessage() != null ? e.getMessage() : "Unknown error");
+            Toast.makeText(MainActivity.this, error, Toast.LENGTH_SHORT).show();
             mButton.setText("Start Server");
         });
     }
@@ -205,8 +158,32 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        if (mSession != null) {
-             mSession.startPreview();
+        if (!mIsInitialized) {
+            VideoQuality videoQuality = new VideoQuality(320, 240, 20, 500000);
+
+            mSession = SessionBuilder.getInstance()
+                    .setCallback(this)
+                    .setSurfaceView(mSurfaceView)
+                    .setPreviewOrientation(90)
+                    .setContext(getApplicationContext())
+                    .setAudioEncoder(SessionBuilder.AUDIO_AAC)
+                    .setAudioQuality(new AudioQuality(16000, 32000))
+                    .setVideoEncoder(SessionBuilder.VIDEO_H264)
+                    .setVideoQuality(videoQuality)
+                    .build();
+
+            startService(new Intent(this, RtspServer.class));
+
+            mButton.setOnClickListener(v -> {
+                if (mSession.isStreaming()) {
+                    new Thread(() -> mSession.stop()).start();
+                } else {
+                    new Thread(() -> mSession.start()).start();
+                }
+            });
+
+            mSession.startPreview();
+            mIsInitialized = true;
         }
     }
 
@@ -215,8 +192,13 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        if (mSession != null && mSession.isStreaming()) {
-            mSession.stop();
+        if (mSession != null) {
+            if (mSession.isStreaming()) {
+                mSession.stop();
+            }
+            mSession.release();
         }
+        stopService(new Intent(this, RtspServer.class));
+        mIsInitialized = false;
     }
 }
