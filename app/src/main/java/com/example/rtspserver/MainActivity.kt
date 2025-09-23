@@ -129,9 +129,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        // You can handle orientation changes here by restarting the preview
+        // You can handle orientation changes here by restarting the preview.
+        // This is also called on start up, so we need to check for permissions.
         rtspCamera2.stopPreview()
-        rtspCamera2.startPreview()
+        if (hasPermissions()) {
+            rtspCamera2.startPreview()
+        }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
