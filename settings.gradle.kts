@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RTSP Server App"
+rootProject.name = "RTSP Server Minimal"
 include(":app")
