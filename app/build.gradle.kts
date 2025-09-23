@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.rtspserver"
-        minSdk = 24 // RootEncoder requires API 21, but Camera2 features are more stable on 24+
+        minSdk = 24
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -33,6 +33,9 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    buildFeatures {
+        viewBinding = true
+    }
 }
 
 dependencies {
@@ -41,7 +44,11 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
-    // PedroSG94's RootEncoder and RTSP Server
+    // RTSP/RTMP/SRT/UDP/TCP Streamer library
     implementation("com.github.pedroSG94.RootEncoder:library:2.6.1")
     implementation("com.github.pedroSG94:RTSP-Server:1.3.6")
+
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }

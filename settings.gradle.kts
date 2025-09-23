@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 pluginManagement {
     repositories {
         google()
@@ -13,5 +15,6 @@ dependencyResolutionManagement {
         maven { url = uri("https://jitpack.io") }
     }
 }
+
 rootProject.name = "RTSP Server App"
 include(":app")
