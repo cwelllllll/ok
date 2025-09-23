@@ -4,11 +4,9 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceHolder;
-import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
@@ -53,7 +51,6 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         mToggleButton = findViewById(R.id.start_stop_button);
         mUrlTextView = findViewById(R.id.rtsp_url);
 
-        // This is the core of the fix: The session is created and configured once in onCreate.
         mSession = SessionBuilder.getInstance()
                 .setCallback(this)
                 .setSurfaceView(mSurfaceView)
@@ -67,63 +64,56 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
         mSurfaceView.getHolder().addCallback(this);
 
-        mToggleButton.setOnClickListener(v -> {
-            toggleStreaming();
-        });
+        mToggleButton.setOnClickListener(v -> toggleStreaming());
 
-        // Start the RTSP server
+        if (!checkPermissions()) {
+            requestPermissions();
+        }
+
+        // We start the server once.
         this.startService(new Intent(this, RtspServer.class));
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (checkPermissions()) {
-            // Permissions are granted, so we can resume the session.
-            mSession.startPreview();
-            updateUI();
-        } else {
-            requestPermissions();
-        }
+        updateUI();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        // Make sure to stop the preview and release the camera
         if (mSession.isStreaming()) {
             mSession.stop();
         }
-        mSession.stopPreview();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // Release the session and stop the server
         mSession.release();
         this.stopService(new Intent(this, RtspServer.class));
     }
 
     private void toggleStreaming() {
         if (!mSession.isStreaming()) {
-            // Start streaming
             mSession.start();
         } else {
-            // Stop streaming
             mSession.stop();
         }
         updateUI();
     }
 
     private void updateUI() {
-        if (mSession.isStreaming()) {
-            mToggleButton.setText("Stop");
-            mUrlTextView.setText(getRtspUrl());
-        } else {
-            mToggleButton.setText("Start");
-            mUrlTextView.setText("");
-        }
+        runOnUiThread(() -> {
+            if (mSession.isStreaming()) {
+                mToggleButton.setText("Stop");
+                mUrlTextView.setText(getRtspUrl());
+            } else {
+                mToggleButton.setText("Start");
+                mUrlTextView.setText("");
+            }
+        });
     }
 
     private String getRtspUrl() {
@@ -170,23 +160,20 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
             if (!checkPermissions()) {
                 Toast.makeText(this, "Permissions are required to run the app.", Toast.LENGTH_LONG).show();
                 finish();
-            } else {
-                // Permissions granted, we can now start the preview
-                mSession.startPreview();
-                updateUI();
             }
         }
     }
 
-    // Session.Callback methods
     @Override
     public void onBitrateUpdate(long bitrate) {}
 
     @Override
     public void onSessionError(int reason, int streamType, Exception e) {
-        Log.e(TAG, "Session error: " + reason + ", " + streamType, e);
-        Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        updateUI();
+        Log.e(TAG, "Session error", e);
+        runOnUiThread(() -> {
+            Toast.makeText(this, "Error: " + (e != null ? e.getMessage() : "Unknown error"), Toast.LENGTH_LONG).show();
+            updateUI();
+        });
     }
 
     @Override
@@ -211,11 +198,9 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         updateUI();
     }
 
-    // SurfaceHolder.Callback methods
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
-        Log.d(TAG, "Surface created.");
-        // The session is already created, so we just need to start the preview
+        Log.d(TAG, "Surface created, starting preview.");
         mSession.startPreview();
     }
 
@@ -224,7 +209,7 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     @Override
     public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-        Log.d(TAG, "Surface destroyed.");
-        // The lifecycle methods (onPause) will handle stopping the preview.
+        Log.d(TAG, "Surface destroyed, stopping preview.");
+        mSession.stopPreview();
     }
 }
