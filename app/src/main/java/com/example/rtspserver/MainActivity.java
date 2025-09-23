@@ -112,14 +112,14 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     public void onPause() {
         super.onPause();
         if (mSession != null && mSession.isStreaming()) {
-            mSession.stop();
+            new Thread(() -> mSession.stop()).start();
         }
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        // The main cleanup is in surfaceDestroyed
+        stopService(new Intent(this, RtspServer.class));
     }
 
     @Override
@@ -181,10 +181,9 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
                     new Thread(() -> mSession.start()).start();
                 }
             });
-
-            mSession.startPreview();
             mIsInitialized = true;
         }
+        mSession.startPreview();
     }
 
     @Override
@@ -192,13 +191,8 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        if (mSession != null) {
-            if (mSession.isStreaming()) {
-                mSession.stop();
-            }
-            mSession.release();
+        if (mIsInitialized && mSession != null) {
+            new Thread(() -> mSession.release()).start();
         }
-        stopService(new Intent(this, RtspServer.class));
-        mIsInitialized = false;
     }
 }
