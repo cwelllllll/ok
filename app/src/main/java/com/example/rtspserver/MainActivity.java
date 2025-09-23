@@ -1,123 +1,101 @@
 package com.example.rtspserver;
 
 import android.Manifest;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.util.Log;
-import android.view.SurfaceHolder;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
-import net.majorkernelpanic.streaming.Session;
-import net.majorkernelpanic.streaming.SessionBuilder;
-import net.majorkernelpanic.streaming.audio.AudioQuality;
-import net.majorkernelpanic.streaming.gl.SurfaceView;
-import net.majorkernelpanic.streaming.rtsp.RtspServer;
-import net.majorkernelpanic.streaming.video.VideoQuality;
-
+import com.pedro.encoder.input.video.CameraOpenException;
+import com.pedro.library.rtsp.RtspCamera2;
+import com.pedro.rtspserver.util.ConnectCheckerRtsp;
+import com.pedro.encoder.input.video.Camera2View;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.util.Enumeration;
 
-public class MainActivity extends AppCompatActivity implements Session.Callback, SurfaceHolder.Callback {
+public class MainActivity extends AppCompatActivity implements ConnectCheckerRtsp {
 
     private static final String TAG = "MainActivity";
     private static final int PERMISSIONS_REQUEST_CODE = 101;
 
-    private SurfaceView mSurfaceView;
-    private Button mToggleButton;
-    private TextView mUrlTextView;
-    private Session mSession;
+    private RtspCamera2 rtspCamera2;
+    private Button startStopButton;
+    private TextView rtspUrlTextView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        mSurfaceView = findViewById(R.id.surface);
-        mToggleButton = findViewById(R.id.start_stop_button);
-        mUrlTextView = findViewById(R.id.rtsp_url);
+        Camera2View camera2View = findViewById(R.id.surfaceView);
+        startStopButton = findViewById(R.id.start_stop_button);
+        rtspUrlTextView = findViewById(R.id.rtsp_url);
 
-        mSession = SessionBuilder.getInstance()
-                .setCallback(this)
-                .setSurfaceView(mSurfaceView)
-                .setPreviewOrientation(90)
-                .setContext(getApplicationContext())
-                .setAudioEncoder(SessionBuilder.AUDIO_AAC)
-                .setAudioQuality(new AudioQuality(8000, 16000))
-                .setVideoEncoder(SessionBuilder.VIDEO_H264)
-                .setVideoQuality(new VideoQuality(640, 480, 20, 1000000))
-                .build();
+        // We are using the RtspCamera2 class from the library, which handles the camera
+        // and the RTSP client logic. We pass the view and the connection checker.
+        rtspCamera2 = new RtspCamera2(camera2View, this);
+        rtspCamera2.setReTries(10); // Optional: Re-try connection if it fails
 
-        mSurfaceView.getHolder().addCallback(this);
-
-        mToggleButton.setOnClickListener(v -> toggleStreaming());
-
-        if (!checkPermissions()) {
-            requestPermissions();
-        }
-
-        // We start the server once.
-        this.startService(new Intent(this, RtspServer.class));
+        startStopButton.setOnClickListener(v -> {
+            if (!checkPermissions()) {
+                requestPermissions();
+                return;
+            }
+            toggleStream();
+        });
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        updateUI();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        if (mSession.isStreaming()) {
-            mSession.stop();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        mSession.release();
-        this.stopService(new Intent(this, RtspServer.class));
-    }
-
-    private void toggleStreaming() {
-        if (!mSession.isStreaming()) {
-            mSession.start();
+    private void toggleStream() {
+        if (!rtspCamera2.isStreaming()) {
+            try {
+                if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
+                    rtspCamera2.startStream(getRtspUrl());
+                } else {
+                    Toast.makeText(this, "Error preparing stream, check permissions and camera.", Toast.LENGTH_SHORT).show();
+                }
+            } catch (CameraOpenException e) {
+                Toast.makeText(this, "Error opening camera: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
         } else {
-            mSession.stop();
+            rtspCamera2.stopStream();
         }
         updateUI();
     }
 
     private void updateUI() {
         runOnUiThread(() -> {
-            if (mSession.isStreaming()) {
-                mToggleButton.setText("Stop");
-                mUrlTextView.setText(getRtspUrl());
+            if (rtspCamera2.isStreaming()) {
+                startStopButton.setText("Stop Stream");
+                rtspUrlTextView.setText(getRtspUrl());
             } else {
-                mToggleButton.setText("Start");
-                mUrlTextView.setText("");
+                startStopButton.setText("Start Stream");
+                rtspUrlTextView.setText("");
             }
         });
     }
 
     private String getRtspUrl() {
-        return "rtsp://" + getLocalIpAddress() + ":8086";
+        // The server is now part of the library, so we don't need a separate service.
+        // The RtspCamera2 class handles the server internally.
+        // The default port in the library is 1935.
+        return "rtsp://" + getLocalIpAddress() + ":1935";
     }
 
     private String getLocalIpAddress() {
@@ -138,19 +116,13 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     }
 
     private boolean checkPermissions() {
-        String[] permissions = {Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO};
-        for (String permission : permissions) {
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                return false;
-            }
-        }
-        return true;
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void requestPermissions() {
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO},
-                PERMISSIONS_REQUEST_CODE);
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.INTERNET}, PERMISSIONS_REQUEST_CODE);
     }
 
     @Override
@@ -164,52 +136,45 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
         }
     }
 
+    // ConnectCheckerRtsp callbacks
     @Override
-    public void onBitrateUpdate(long bitrate) {}
-
-    @Override
-    public void onSessionError(int reason, int streamType, Exception e) {
-        Log.e(TAG, "Session error", e);
+    public void onAuthErrorRtsp() {
+        Log.e(TAG, "RTSP Auth Error");
         runOnUiThread(() -> {
-            Toast.makeText(this, "Error: " + (e != null ? e.getMessage() : "Unknown error"), Toast.LENGTH_LONG).show();
+            rtspCamera2.stopStream();
+            Toast.makeText(this, "RTSP Auth Error", Toast.LENGTH_SHORT).show();
             updateUI();
         });
     }
 
     @Override
-    public void onPreviewStarted() {
-        Log.d(TAG, "Preview started.");
+    public void onAuthSuccessRtsp() {
+        Log.d(TAG, "RTSP Auth Success");
     }
 
     @Override
-    public void onSessionConfigured() {
-        Log.d(TAG, "Session configured.");
+    public void onConnectionFailedRtsp(String reason) {
+        Log.e(TAG, "RTSP Connection Failed: " + reason);
+        runOnUiThread(() -> {
+            rtspCamera2.stopStream();
+            Toast.makeText(this, "RTSP Connection Failed: " + reason, Toast.LENGTH_SHORT).show();
+            updateUI();
+        });
     }
 
     @Override
-    public void onSessionStarted() {
-        Log.d(TAG, "Session started.");
-        updateUI();
+    public void onConnectionSuccessRtsp() {
+        Log.d(TAG, "RTSP Connection Success");
+        runOnUiThread(this::updateUI);
     }
 
     @Override
-    public void onSessionStopped() {
-        Log.d(TAG, "Session stopped.");
-        updateUI();
+    public void onNewBitrateRtsp(long bitrate) {
     }
 
     @Override
-    public void surfaceCreated(@NonNull SurfaceHolder holder) {
-        Log.d(TAG, "Surface created, starting preview.");
-        mSession.startPreview();
-    }
-
-    @Override
-    public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {}
-
-    @Override
-    public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-        Log.d(TAG, "Surface destroyed, stopping preview.");
-        mSession.stopPreview();
+    public void onDisconnectRtsp() {
+        Log.d(TAG, "RTSP Client Disconnected");
+        runOnUiThread(this::updateUI);
     }
 }
