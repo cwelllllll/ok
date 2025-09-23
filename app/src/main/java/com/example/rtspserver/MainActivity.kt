@@ -46,7 +46,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker, SurfaceHolder.Callback
                     // Te operacje mogą blokować wątek UI, wykonaj je w tle
                     if (rtspCamera2.prepareAudio() && rtspCamera2.prepareVideo()) {
                         binding.bStartStop.text = "Stop Stream"
-                        rtspCamera2.startStream("/live/pedro")
+                        // Use a single name for the endpoint, without slashes.
+                        rtspCamera2.startStream("live")
                     } else {
                         Toast.makeText(this@MainActivity, "Error preparing stream", Toast.LENGTH_SHORT).show()
                     }
