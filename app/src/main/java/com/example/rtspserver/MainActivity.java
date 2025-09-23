@@ -23,8 +23,11 @@ import net.majorkernelpanic.streaming.gl.SurfaceView;
 import net.majorkernelpanic.streaming.rtsp.RtspServer;
 import net.majorkernelpanic.streaming.video.VideoQuality;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
+import java.util.Enumeration;
 
 public class MainActivity extends AppCompatActivity implements Session.Callback, SurfaceHolder.Callback {
 
@@ -79,7 +82,6 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     private void initializeApp() {
         mSurfaceView.getHolder().addCallback(this);
 
-        // Configures the RTSP server and the session
         mSession = SessionBuilder.getInstance()
                 .setCallback(this)
                 .setSurfaceView(mSurfaceView)
@@ -91,18 +93,32 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
                 .setVideoQuality(new VideoQuality(640, 480, 20, 500000))
                 .build();
 
-        // Starts the RTSP server
         this.startService(new Intent(this, RtspServer.class));
 
         mButton.setOnClickListener(v -> {
             if (mSession.isStreaming()) {
-                mSession.stop();
-                mButton.setText("Start Server");
+                new Thread(() -> mSession.stop()).start();
             } else {
-                mSession.start();
-                mButton.setText("Stop Server");
+                new Thread(() -> mSession.start()).start();
             }
         });
+    }
+
+    private String getIpAddress() {
+        try {
+            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements();) {
+                NetworkInterface intf = en.nextElement();
+                for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements();) {
+                    InetAddress inetAddress = enumIpAddr.nextElement();
+                    if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
+                        return inetAddress.getHostAddress();
+                    }
+                }
+            }
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+        return "127.0.0.1";
     }
 
     @Override
@@ -131,55 +147,51 @@ public class MainActivity extends AppCompatActivity implements Session.Callback,
     }
 
     @Override
-    public void onBitrateUpdate(long bitrate) {
-        // Not used
-    }
+    public void onBitrateUpdate(long bitrate) {}
 
     @Override
     public void onSessionError(int reason, int streamType, Exception e) {
-        // Not used
+        runOnUiThread(() -> {
+            Toast.makeText(MainActivity.this, "Session error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            mButton.setText("Start Server");
+        });
     }
 
     @Override
-    public void onPreviewStarted() {
-        // Not used
-    }
+    public void onPreviewStarted() {}
 
     @Override
-    public void onSessionConfigured() {
-        // Not used
-    }
-
-
+    public void onSessionConfigured() {}
 
     @Override
     public void onSessionStarted() {
-        // We get the address of the stream here
-        runOnUiThread(() -> mUrlTextView.setText(mSession.getSessionDescription().toString().split(" ")[2].replace("m=video", "trackID=1")));
+        runOnUiThread(() -> {
+            mButton.setText("Stop Server");
+            mUrlTextView.setText("rtsp://" + getIpAddress() + ":8086");
+        });
     }
 
     @Override
     public void onSessionStopped() {
-        runOnUiThread(() -> mUrlTextView.setText("RTSP URL: "));
+        runOnUiThread(() -> {
+            mButton.setText("Start Server");
+            mUrlTextView.setText("RTSP URL: ");
+        });
     }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        // Starts the preview of the camera
         if (mSession != null) {
              mSession.startPreview();
         }
     }
 
     @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        // Not used
-    }
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        // Stops the streaming session
-         if (mSession != null && mSession.isStreaming()) {
+        if (mSession != null && mSession.isStreaming()) {
             mSession.stop();
         }
     }
