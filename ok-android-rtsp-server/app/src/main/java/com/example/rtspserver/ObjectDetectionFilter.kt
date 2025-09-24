@@ -11,13 +11,15 @@ class ObjectDetectionFilter(context: Context) : BaseFilterRender() {
 
     var listener: ((Bitmap) -> Unit)? = null
     private var isEnabled = false
+    private var released = false
 
     override fun initGlFilter(context: Context) {
         // No GL resources to initialize
+        released = false
     }
 
     override fun drawFilter() {
-        if (isEnabled) {
+        if (isEnabled && !released) {
             // Read the pixels from the framebuffer and send to the listener
             val upsideDownBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val buffer = ByteBuffer.allocate(width * height * 4)
@@ -34,6 +36,7 @@ class ObjectDetectionFilter(context: Context) : BaseFilterRender() {
 
     override fun release() {
         // No GL resources to release
+        released = true
     }
 
     override fun disableResources() {

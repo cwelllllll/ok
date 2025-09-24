@@ -36,6 +36,7 @@ class OverlayRender(private val context: Context) : BaseFilterRender() {
     private var overlayBitmap: Bitmap? = null
     private var overlayTextureId = -1
     private var isEnabled = false
+    private var released = false
 
     private val squareVertexData = floatArrayOf(
         -1f, -1f, 0f, 1f, -1f, 0f, -1f, 1f, 0f, 1f, 1f, 0f
@@ -70,6 +71,7 @@ class OverlayRender(private val context: Context) : BaseFilterRender() {
         uvBuffer = ByteBuffer.allocateDirect(squareVertexTexture.size * 4)
             .order(ByteOrder.nativeOrder()).asFloatBuffer()
         uvBuffer.put(squareVertexTexture).position(0)
+        released = false
     }
 
     fun setDetectionResults(results: List<ObjectDetector.DetectionResult>) {
@@ -77,7 +79,7 @@ class OverlayRender(private val context: Context) : BaseFilterRender() {
     }
 
     override fun drawFilter() {
-        if (isEnabled) {
+        if (isEnabled && !released) {
             detectionResults?.let { results ->
                 if (overlayBitmap == null || overlayBitmap!!.width != width || overlayBitmap!!.height != height) {
                     overlayBitmap?.recycle()
@@ -129,6 +131,7 @@ class OverlayRender(private val context: Context) : BaseFilterRender() {
             val textures = intArrayOf(overlayTextureId)
             GLES20.glDeleteTextures(1, textures, 0)
         }
+        released = true
     }
 
     override fun disableResources() {
