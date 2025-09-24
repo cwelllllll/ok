@@ -83,6 +83,15 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         checkAndRequestPermissions()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+        stopService(Intent(this, RtspService::class.java))
+    }
+
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = mutableListOf<String>()
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -173,6 +182,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             }
             bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         }
+        binding.surfaceView.onResume()
     }
 
     override fun onPause() {
@@ -181,6 +191,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
             unbindService(serviceConnection)
             isBound = false
         }
+        binding.surfaceView.onPause()
     }
 
     private fun updateUi() {
