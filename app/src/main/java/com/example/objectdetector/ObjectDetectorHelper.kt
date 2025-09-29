@@ -5,9 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import android.util.Log
 import androidx.camera.core.ImageProxy
-import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.support.image.ops.Rot90Op
 import org.tensorflow.lite.task.core.BaseOptions
 import org.tensorflow.lite.task.core.vision.ImageProcessingOptions
 import org.tensorflow.lite.task.vision.detector.Detection
@@ -35,6 +33,7 @@ class ObjectDetectorHelper(
             when (currentDelegate) {
                 DELEGATE_GPU -> baseOptionsBuilder.useGpu()
                 DELEGATE_NNAPI -> baseOptionsBuilder.useNnapi()
+                DELEGATE_CPU -> { /* Default */ }
             }
 
             val optionsBuilder =
@@ -46,8 +45,8 @@ class ObjectDetectorHelper(
             objectDetector = ObjectDetector.createFromFileAndOptions(context, MODEL_NAME, optionsBuilder.build())
 
         } catch (e: Exception) {
-            objectDetectorListener?.onError("TFLite failed to load model: ${e.message}")
-            Log.e(TAG, "TFLite failed to load model", e)
+            objectDetectorListener?.onError("TFLite model failed to load: ${e.message}")
+            Log.e(TAG, "TFLite model failed to load", e)
         }
     }
 
@@ -61,14 +60,16 @@ class ObjectDetectorHelper(
         val rotation = imageProxy.imageInfo.rotationDegrees
         imageProxy.close()
 
-        // This is the CRITICAL part: an ImageProcessingOptions object that tells the detector how to process the image.
-        // For YOLO models, the input is typically normalized to a 0-1 range.
+        // This is the CRITICAL part that was missing.
+        // We create an ImageProcessingOptions object to tell the detector how to process the image.
+        // The rotation is handled here, so we don't need a separate ImageProcessor step.
         val imageProcessingOptions = ImageProcessingOptions.builder()
-            .setRotation(-rotation / 90)
+            .setRotationDegrees(rotation)
             .build()
 
         val tensorImage = TensorImage.fromBitmap(imageBitmap)
 
+        // Pass the image AND the processing options to the detector.
         val results: List<Detection>? = objectDetector?.detect(tensorImage, imageProcessingOptions)
 
         val detectionResults = results?.map {
