@@ -22,7 +22,7 @@ import java.util.PriorityQueue
 class ObjectDetectorHelper(
     var threshold: Float = 0.5f,
     var numThreads: Int = 2,
-    var maxResults: Int = 5,
+    var maxResults: Int = 10,
     var currentDelegate: Int = 0,
     val context: Context,
     val objectDetectorListener: DetectorListener?
@@ -48,9 +48,7 @@ class ObjectDetectorHelper(
                             objectDetectorListener?.onError("GPU is not supported on this device")
                         }
                     }
-                    DELEGATE_NNAPI -> {
-                        addDelegate(NnApiDelegate())
-                    }
+                    DELEGATE_NNAPI -> addDelegate(NnApiDelegate())
                     DELEGATE_CPU -> { /* Default */ }
                 }
             }
@@ -71,42 +69,42 @@ class ObjectDetectorHelper(
         val imageProcessor = ImageProcessor.Builder()
             .add(Rot90Op(-rotation / 90))
             .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
-            .add(NormalizeOp(0f, 255f)) // This is the crucial normalization step
+            .add(NormalizeOp(0f, 255f))
             .build()
 
         val tensorImage = TensorImage(DataType.FLOAT32)
         tensorImage.load(imageBitmap)
         val processedImage = imageProcessor.process(tensorImage)
 
-        val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, OUTPUT_ELEMENTS, labels.size + 4), DataType.FLOAT32)
+        val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, labels.size + 4, OUTPUT_ELEMENTS), DataType.FLOAT32)
         interpreter?.run(processedImage.buffer, outputBuffer.buffer.rewind())
 
-        val results = processYoloOutput(outputBuffer.floatArray, imageBitmap.width, imageBitmap.height)
+        val results = processYoloOutput(outputBuffer.floatArray)
         objectDetectorListener?.onResults(results, imageBitmap.height, imageBitmap.width)
     }
 
-    private fun processYoloOutput(output: FloatArray, imageWidth: Int, imageHeight: Int): List<DetectionResult> {
-        val boxes = mutableListOf<RectF>()
-        val scores = mutableListOf<Float>()
-        val classIndexes = mutableListOf<Int>()
+    private fun processYoloOutput(output: FloatArray): List<DetectionResult> {
+        val detections = mutableListOf<DetectionResult>()
 
-        val xFactor = imageWidth / INPUT_SIZE.toFloat()
-        val yFactor = imageHeight / INPUT_SIZE.toFloat()
-
-        val numClasses = labels.size
-        val numElementsPerDetection = numClasses + 4
+        // Transpose the output from [1, 84, 8400] to [8400, 84]
+        val transposedOutput = FloatArray(OUTPUT_ELEMENTS * (labels.size + 4))
+        for (i in 0 until OUTPUT_ELEMENTS) {
+            for (j in 0 until labels.size + 4) {
+                transposedOutput[i * (labels.size + 4) + j] = output[j * OUTPUT_ELEMENTS + i]
+            }
+        }
 
         for (i in 0 until OUTPUT_ELEMENTS) {
-            val baseIdx = i * numElementsPerDetection
-            val cx = output[baseIdx]
-            val cy = output[baseIdx + 1]
-            val w = output[baseIdx + 2]
-            val h = output[baseIdx + 3]
+            val offset = i * (labels.size + 4)
+            val cx = transposedOutput[offset]
+            val cy = transposedOutput[offset + 1]
+            val w = transposedOutput[offset + 2]
+            val h = transposedOutput[offset + 3]
 
             var maxScore = 0f
             var classIndex = -1
-            for (j in 0 until numClasses) {
-                val score = output[baseIdx + 4 + j]
+            for (j in 0 until labels.size) {
+                val score = transposedOutput[offset + 4 + j]
                 if (score > maxScore) {
                     maxScore = score
                     classIndex = j
@@ -114,39 +112,36 @@ class ObjectDetectorHelper(
             }
 
             if (maxScore > threshold) {
-                val x1 = (cx - w / 2) * xFactor
-                val y1 = (cy - h / 2) * yFactor
-                val x2 = (cx + w / 2) * xFactor
-                val y2 = (cy + h / 2) * yFactor
-                boxes.add(RectF(x1, y1, x2, y2))
-                scores.add(maxScore)
-                classIndexes.add(classIndex)
+                val x1 = cx - w / 2
+                val y1 = cy - h / 2
+                val x2 = cx + w / 2
+                val y2 = cy + h / 2
+                // Bounding box is in model coordinates (0-640)
+                val box = RectF(x1, y1, x2, y2)
+                detections.add(DetectionResult(box, labels[classIndex], maxScore))
             }
         }
 
-        return nonMaxSuppression(boxes, scores, classIndexes)
+        return nonMaxSuppression(detections)
     }
 
-    private fun nonMaxSuppression(boxes: List<RectF>, scores: List<Float>, classIndexes: List<Int>): List<DetectionResult> {
-        val pq = PriorityQueue<IndexedDetection>(scores.size, compareByDescending { it.score })
-        for (i in boxes.indices) {
-            pq.add(IndexedDetection(i, boxes[i], scores[i], classIndexes[i]))
-        }
-
+    private fun nonMaxSuppression(detections: List<DetectionResult>): List<DetectionResult> {
+        val sortedDetections = detections.sortedByDescending { it.score }
         val result = mutableListOf<DetectionResult>()
-        while (pq.isNotEmpty()) {
-            val best = pq.poll() ?: continue
-            if (result.size >= maxResults) break
 
-            val label = labels[best.classIndex]
-            result.add(DetectionResult(best.box, "$label, ${String.format("%.2f", best.score)}"))
-
-            val iterator = pq.iterator()
-            while (iterator.hasNext()) {
-                val next = iterator.next()
-                if (iou(best.box, next.box) > IOU_THRESHOLD) {
-                    iterator.remove()
+        for (detection in sortedDetections) {
+            var shouldAdd = true
+            for (existing in result) {
+                if (iou(detection.boundingBox, existing.boundingBox) > IOU_THRESHOLD) {
+                    shouldAdd = false
+                    break
                 }
+            }
+            if (shouldAdd) {
+                result.add(detection)
+            }
+            if (result.size >= maxResults) {
+                break
             }
         }
         return result
@@ -162,13 +157,12 @@ class ObjectDetectorHelper(
 
         val intersectionArea = intersectionWidth * intersectionHeight
         val areaA = (a.right - a.left) * (a.bottom - a.top)
-        val areaB = (b.right - b.left) * (b.bottom - a.top)
+        val areaB = (b.right - b.left) * (b.bottom - b.top)
 
         return intersectionArea / (areaA + areaB - intersectionArea)
     }
 
-    data class DetectionResult(val boundingBox: RectF, val text: String)
-    private data class IndexedDetection(val index: Int, val box: RectF, val score: Float, val classIndex: Int)
+    data class DetectionResult(val boundingBox: RectF, val label: String, val score: Float)
 
     interface DetectorListener {
         fun onError(error: String)
@@ -182,7 +176,7 @@ class ObjectDetectorHelper(
         const val MODEL_NAME = "yolo11n_float32.tflite"
         const val LABELS_PATH = "labels.txt"
         const val INPUT_SIZE = 640
-        const val OUTPUT_ELEMENTS = 25200
+        const val OUTPUT_ELEMENTS = 8400 // For a 640x640 YOLOv8 model, this is the number of detection candidates
         const val IOU_THRESHOLD = 0.5f
         private const val TAG = "ObjectDetectorHelper"
     }

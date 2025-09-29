@@ -4,19 +4,23 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
-import kotlin.math.max
+import kotlin.math.min
 
 class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs) {
 
     private var results: List<ObjectDetectorHelper.DetectionResult> = listOf()
-    private var boxPaint = Paint()
-    private var textBackgroundPaint = Paint()
-    private var textPaint = Paint()
+    private val boxPaint = Paint()
+    private val textBackgroundPaint = Paint()
+    private val textPaint = Paint()
 
-    private var scaleFactor: Float = 1f
+    private var scaleFactorX: Float = 1f
+    private var scaleFactorY: Float = 1f
+    private var offsetX: Float = 0f
+    private var offsetY: Float = 0f
 
     init {
         initPaints()
@@ -42,31 +46,27 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
         for (result in results) {
             val boundingBox = result.boundingBox
 
-            // The coordinates from the helper are NOT scaled to the input size, but to the original image size.
-            // We need to scale them to the view size, respecting aspect ratio.
-            val top = boundingBox.top * scaleFactor
-            val bottom = boundingBox.bottom * scaleFactor
-            val left = boundingBox.left * scaleFactor
-            val right = boundingBox.right * scaleFactor
+            val left = boundingBox.left * scaleFactorX + offsetX
+            val top = boundingBox.top * scaleFactorY + offsetY
+            val right = boundingBox.right * scaleFactorX + offsetX
+            val bottom = boundingBox.bottom * scaleFactorY + offsetY
 
             canvas.drawRect(left, top, right, bottom, boxPaint)
 
-            val drawableText = result.text
-
-            val textBounds = android.graphics.Rect()
-            textPaint.getTextBounds(drawableText, 0, drawableText.length, textBounds)
+            val text = "${result.label} ${String.format("%.2f", result.score)}"
+            val textBounds = Rect()
+            textPaint.getTextBounds(text, 0, text.length, textBounds)
             val textHeight = textBounds.height()
-            val textWidth = textPaint.measureText(drawableText)
+            val textWidth = textPaint.measureText(text)
 
             canvas.drawRect(
                 left,
+                top - textHeight,
+                left + textWidth,
                 top,
-                left + textWidth + 8,
-                top + textHeight + 8,
                 textBackgroundPaint
             )
-
-            canvas.drawText(drawableText, left, top + textHeight, textPaint)
+            canvas.drawText(text, left, top, textPaint)
         }
     }
 
@@ -77,8 +77,28 @@ class OverlayView(context: Context?, attrs: AttributeSet?) : View(context, attrs
     ) {
         results = detectionResults
 
-        // Calcaulate the scale factor to map coordinates from the image to the view.
-        scaleFactor = max(width * 1f / imageWidth, height * 1f / imageHeight)
+        // This is crucial. Since the PreviewView is using 'fitCenter', we must calculate the scale
+        // and offset to correctly map the model's 640x640 coordinates to the view's coordinates.
+        val viewWidth = width.toFloat()
+        val viewHeight = height.toFloat()
+
+        val imageAspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
+        val viewAspectRatio = viewWidth / viewHeight
+
+        if (imageAspectRatio > viewAspectRatio) {
+            // Image is wider than the view. Scale based on width.
+            scaleFactorX = viewWidth / ObjectDetectorHelper.INPUT_SIZE
+            scaleFactorY = viewWidth / imageAspectRatio / ObjectDetectorHelper.INPUT_SIZE
+            offsetX = 0f
+            offsetY = (viewHeight - scaleFactorY * ObjectDetectorHelper.INPUT_SIZE) / 2
+        } else {
+            // Image is taller than or same aspect ratio as the view. Scale based on height.
+            scaleFactorX = viewHeight * imageAspectRatio / ObjectDetectorHelper.INPUT_SIZE
+            scaleFactorY = viewHeight / ObjectDetectorHelper.INPUT_SIZE
+            offsetX = (viewWidth - scaleFactorX * ObjectDetectorHelper.INPUT_SIZE) / 2
+            offsetY = 0f
+        }
+
         invalidate()
     }
 }
