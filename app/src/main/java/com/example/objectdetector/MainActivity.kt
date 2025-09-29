@@ -87,7 +87,7 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
     }
 
     override fun onResults(
-        results: List<ObjectDetectorHelper.DetectionResult>,
+        results: List<ObjectTracker.TrackedObject>,
         imageHeight: Int,
         imageWidth: Int
     ) {
@@ -97,7 +97,6 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
                 imageHeight,
                 imageWidth
             )
-            binding.overlay.invalidate()
         }
     }
 
