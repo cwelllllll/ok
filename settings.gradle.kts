@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Wifi Displayer"
+rootProject.name = "Object Detector"
 include(":app")
