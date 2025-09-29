@@ -48,7 +48,6 @@ class ObjectDetectorHelper(
                 }
             }
             interpreter = Interpreter(FileUtil.loadMappedFile(context, MODEL_NAME), interpreterOptions)
-            objectTracker.maxResults = maxResults
         } catch (e: Exception) {
             objectDetectorListener?.onError("TFLite failed to load model: ${e.message}")
             Log.e(TAG, "TFLite failed to load model", e)
