@@ -11,6 +11,7 @@
         android:allowBackup="true"
         android:label="Object Detector"
         android:supportsRtl="true"
+        android:theme="@style/Theme.ObjectDetector"
         tools:targetApi="31">
         <activity
             android:name=".MainActivity"
