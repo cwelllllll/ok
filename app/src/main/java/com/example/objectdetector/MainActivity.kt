@@ -15,7 +15,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.objectdetector.databinding.ActivityMainBinding
-import org.tensorflow.lite.task.vision.detector.Detection
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -31,6 +30,8 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
         // Check for camera permissions
         if (allPermissionsGranted()) {
             startCamera()
@@ -39,8 +40,6 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
             )
         }
-
-        cameraExecutor = Executors.newSingleThreadExecutor()
     }
 
     private fun startCamera() {
@@ -88,13 +87,13 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
     }
 
     override fun onResults(
-        results: MutableList<Detection>?,
+        results: List<ObjectDetectorHelper.DetectionResult>,
         imageHeight: Int,
         imageWidth: Int
     ) {
         runOnUiThread {
             binding.overlay.setResults(
-                results ?: listOf(),
+                results,
                 imageHeight,
                 imageWidth
             )
@@ -130,7 +129,9 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
 
     override fun onDestroy() {
         super.onDestroy()
-        cameraExecutor.shutdown()
+        if (::cameraExecutor.isInitialized) {
+            cameraExecutor.shutdown()
+        }
     }
 
     companion object {
