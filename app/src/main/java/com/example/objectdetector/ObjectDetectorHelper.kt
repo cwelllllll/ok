@@ -9,6 +9,7 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
@@ -46,6 +47,9 @@ class ObjectDetectorHelper(
                         } else {
                             objectDetectorListener?.onError("GPU is not supported on this device")
                         }
+                    }
+                    DELEGATE_NNAPI -> {
+                        addDelegate(NnApiDelegate())
                     }
                     DELEGATE_CPU -> { /* Default */ }
                 }
@@ -174,6 +178,7 @@ class ObjectDetectorHelper(
     companion object {
         const val DELEGATE_CPU = 0
         const val DELEGATE_GPU = 1
+        const val DELEGATE_NNAPI = 2
         const val MODEL_NAME = "yolo11n_float32.tflite"
         const val LABELS_PATH = "labels.txt"
         const val INPUT_SIZE = 640

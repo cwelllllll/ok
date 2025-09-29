@@ -60,7 +60,6 @@ dependencies {
     implementation("androidx.camera:camera-view:1.3.1")
 
     // TensorFlow Lite libraries
-    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.3")
-    implementation("org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.3")
+    implementation("org.tensorflow:tensorflow-lite:2.9.0")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.9.0")
 }
