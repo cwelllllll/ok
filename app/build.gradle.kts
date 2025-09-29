@@ -59,8 +59,8 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
 
-    // A stable and compatible set of TensorFlow Lite libraries for manual interpreter usage.
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite:2.15.0")
+    // The Task Vision library simplifies model deployment. It bundles compatible core and support libraries.
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    // The GPU delegate for acceleration.
     implementation("org.tensorflow:tensorflow-lite-gpu:2.15.0")
 }
