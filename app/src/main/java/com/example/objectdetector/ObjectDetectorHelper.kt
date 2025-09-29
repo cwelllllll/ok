@@ -17,7 +17,6 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
-import java.util.PriorityQueue
 
 class ObjectDetectorHelper(
     var threshold: Float = 0.5f,
@@ -71,23 +70,21 @@ class ObjectDetectorHelper(
         tensorImage.load(imageBitmap)
         val processedImage = imageProcessor.process(tensorImage)
 
-        // YOLOv8 output shape is [1, 84, 8400] where 84=4+80 classes
         val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, labels.size + 4, OUTPUT_ELEMENTS), DataType.FLOAT32)
         interpreter?.run(processedImage.buffer, outputBuffer.buffer.rewind())
 
         val rawDetections = processYoloOutput(outputBuffer.floatArray)
-        val trackedObjects = objectTracker.update(rawDetections)
+        val finalDetections = nonMaxSuppression(rawDetections)
+        val trackedObjects = objectTracker.update(finalDetections)
 
         objectDetectorListener?.onResults(trackedObjects, imageBitmap.height, imageBitmap.width)
     }
 
-    // This is the corrected YOLO output processing logic
     private fun processYoloOutput(output: FloatArray): List<DetectionResult> {
         val detections = mutableListOf<DetectionResult>()
         val numClasses = labels.size
 
         for (i in 0 until OUTPUT_ELEMENTS) {
-            // Direct indexing without transposition
             val cx = output[i]
             val cy = output[i + OUTPUT_ELEMENTS]
             val w = output[i + 2 * OUTPUT_ELEMENTS]
@@ -96,7 +93,6 @@ class ObjectDetectorHelper(
             var maxScore = 0f
             var classIndex = -1
             for (j in 0 until numClasses) {
-                // Class scores start after the 4 bounding box coordinates
                 val score = output[i + (4 + j) * OUTPUT_ELEMENTS]
                 if (score > maxScore) {
                     maxScore = score
@@ -118,7 +114,43 @@ class ObjectDetectorHelper(
         return detections
     }
 
-    // This is a data class that our ObjectTracker will use.
+    private fun nonMaxSuppression(detections: List<DetectionResult>): List<DetectionResult> {
+        val sortedDetections = detections.sortedByDescending { it.score }
+        val result = mutableListOf<DetectionResult>()
+
+        for (detection in sortedDetections) {
+            var shouldAdd = true
+            for (existing in result) {
+                if (iou(detection.boundingBox, existing.boundingBox) > IOU_THRESHOLD) {
+                    shouldAdd = false
+                    break
+                }
+            }
+            if (shouldAdd) {
+                result.add(detection)
+            }
+            if (result.size >= maxResults) {
+                break
+            }
+        }
+        return result
+    }
+
+    private fun iou(a: RectF, b: RectF): Float {
+        val intersectionX = maxOf(a.left, b.left)
+        val intersectionY = maxOf(a.top, b.top)
+        val intersectionWidth = minOf(a.right, b.right) - intersectionX
+        val intersectionHeight = minOf(a.bottom, b.bottom) - intersectionY
+
+        if (intersectionWidth <= 0 || intersectionHeight <= 0) return 0f
+
+        val intersectionArea = intersectionWidth * intersectionHeight
+        val areaA = (a.right - a.left) * (a.bottom - a.top)
+        val areaB = (b.right - b.left) * (b.bottom - a.top)
+
+        return intersectionArea / (areaA + areaB - intersectionArea)
+    }
+
     data class DetectionResult(val boundingBox: RectF, val label: String, val score: Float)
 
     interface DetectorListener {
@@ -130,10 +162,11 @@ class ObjectDetectorHelper(
         const val DELEGATE_CPU = 0
         const val DELEGATE_GPU = 1
         const val DELEGATE_NNAPI = 2
-        const val MODEL_NAME = "yolo11s_float32.tflite" // Corrected model name
+        const val MODEL_NAME = "yolo11s_float32.tflite"
         const val LABELS_PATH = "labels.txt"
         const val INPUT_SIZE = 640
         const val OUTPUT_ELEMENTS = 8400
+        const val IOU_THRESHOLD = 0.5f
         private const val TAG = "ObjectDetectorHelper"
     }
 }

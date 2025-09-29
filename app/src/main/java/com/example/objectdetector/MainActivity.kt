@@ -45,7 +45,8 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
     private fun startCamera() {
         objectDetectorHelper = ObjectDetectorHelper(
             context = this,
-            objectDetectorListener = this
+            objectDetectorListener = this,
+            currentDelegate = ObjectDetectorHelper.DELEGATE_GPU
         )
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
