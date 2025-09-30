@@ -60,4 +60,6 @@ dependencies {
 
     // The Task Vision library simplifies model deployment and bundles all necessary dependencies.
     implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    // GPU delegate for acceleration
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.15.0")
 }

@@ -5,9 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import android.util.Log
 import androidx.camera.core.ImageProxy
+import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
+import org.tensorflow.lite.support.image.ops.Rot90Op
 import org.tensorflow.lite.task.core.BaseOptions
-import org.tensorflow.lite.task.core.vision.ImageProcessingOptions
 import org.tensorflow.lite.task.vision.detector.Detection
 import org.tensorflow.lite.task.vision.detector.ObjectDetector
 
@@ -30,12 +31,11 @@ class ObjectDetectorHelper(
     private fun setupObjectDetector() {
         try {
             val baseOptionsBuilder = BaseOptions.builder().setNumThreads(numThreads)
-            // GPU delegate is temporarily disabled to ensure stability.
-            // It will be re-enabled in the final step.
-            // when (currentDelegate) {
-            //     DELEGATE_GPU -> baseOptionsBuilder.useGpu()
-            //     DELEGATE_NNAPI -> baseOptionsBuilder.useNnapi()
-            // }
+            when (currentDelegate) {
+                DELEGATE_GPU -> baseOptionsBuilder.useGpu()
+                DELEGATE_NNAPI -> baseOptionsBuilder.useNnapi()
+                DELEGATE_CPU -> { /* Default */ }
+            }
 
             val optionsBuilder =
                 ObjectDetector.ObjectDetectorOptions.builder()
@@ -61,31 +61,25 @@ class ObjectDetectorHelper(
         val rotation = imageProxy.imageInfo.rotationDegrees
         imageProxy.close()
 
-        // This is the CRITICAL part that was missing.
-        // We create an ImageProcessingOptions object to tell the detector how to process the image.
-        // The rotation is handled here, so we don't need a separate ImageProcessor step.
-        val imageProcessingOptions = ImageProcessingOptions.builder()
-            .setRotationDegrees(rotation)
+        // The Task Library's ObjectDetector handles normalization and resizing internally.
+        // We just need to handle the rotation manually before passing the image.
+        val imageProcessor = ImageProcessor.Builder()
+            .add(Rot90Op(-rotation / 90))
             .build()
 
-        val tensorImage = TensorImage.fromBitmap(imageBitmap)
+        val tensorImage = imageProcessor.process(TensorImage.fromBitmap(imageBitmap))
 
-        // Pass the image AND the processing options to the detector.
-        val results: List<Detection>? = objectDetector?.detect(tensorImage, imageProcessingOptions)
+        val results: List<Detection>? = objectDetector?.detect(tensorImage)
 
-        // Convert the results from the Task Library to our own data class for the tracker.
         val detectionResults = results?.map {
             DetectionResult(it.boundingBox, it.categories.first().label, it.categories.first().score)
         } ?: emptyList()
 
-        // Pass the clean detections to the tracker.
         val trackedObjects = objectTracker.update(detectionResults)
 
-        // Pass the tracked objects to the listener.
         objectDetectorListener?.onResults(trackedObjects, imageBitmap.height, imageBitmap.width)
     }
 
-    // This is a data class that our ObjectTracker will use.
     data class DetectionResult(val boundingBox: RectF, val label: String, val score: Float)
 
     interface DetectorListener {
