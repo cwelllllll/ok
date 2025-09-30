@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity(), ObjectDetectorHelper.DetectorListener 
         objectDetectorHelper = ObjectDetectorHelper(
             context = this,
             objectDetectorListener = this,
-            currentDelegate = ObjectDetectorHelper.DELEGATE_GPU
+            currentDelegate = ObjectDetectorHelper.DELEGATE_CPU
         )
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
