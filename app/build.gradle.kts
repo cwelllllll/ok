@@ -61,6 +61,5 @@ dependencies {
     // TensorFlow Lite libraries for manual implementation
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite:2.15.0")
-    // GPU delegate provided via Google Play Services for stability
-    implementation("com.google.android.gms:play-services-tflite-gpu:16.2.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.15.0")
 }

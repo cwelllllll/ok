@@ -3,14 +3,13 @@ package com.example.objectdetector
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
-import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ImageProxy
-import com.google.android.gms.tflite.client.TfLiteInitializationOptions
-import com.google.android.gms.tflite.gpu.support.TfLiteGpu
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.nnapi.NnApiDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
@@ -31,7 +30,6 @@ class ObjectDetectorHelper(
     private var interpreter: Interpreter? = null
     private var labels: List<String>
     private val objectTracker = ObjectTracker()
-    private var gpuDelegate: GpuDelegate? = null
 
     init {
         labels = FileUtil.loadLabels(context, LABELS_PATH)
@@ -39,40 +37,25 @@ class ObjectDetectorHelper(
     }
 
     private fun setupObjectDetector() {
-        if (currentDelegate == DELEGATE_GPU) {
-            TfLiteGpu.isGpuDelegateAvailable(context).onSuccessTask { gpuAvailable ->
-                if (gpuAvailable) {
-                    val optionsBuilder = TfLiteInitializationOptions.builder()
-                        .setEnableGpuDelegateSupport(true)
-                    TfLiteGpu.initialize(context, optionsBuilder.build()).onSuccessTask {
-                        val interpreterOptions = Interpreter.Options().apply {
-                            addDelegate(GpuDelegate())
-                            setNumThreads(numThreads)
-                        }
-                        createInterpreter(interpreterOptions)
-                    }.addOnFailureListener { e ->
-                        objectDetectorListener?.onError("GPU delegate failed to initialize: ${e.message}")
-                        createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
-                    }
-                } else {
-                    objectDetectorListener?.onError("GPU is not supported on this device.")
-                    createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
-                }
-            }.addOnFailureListener { e ->
-                objectDetectorListener?.onError("GPU compatibility check failed: ${e.message}")
-                createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
-            }
-        } else {
-             createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
-        }
-    }
-
-    private fun createInterpreter(options: Interpreter.Options) {
         try {
-            interpreter = Interpreter(FileUtil.loadMappedFile(context, MODEL_NAME), options)
+            val interpreterOptions = Interpreter.Options().apply {
+                setNumThreads(numThreads)
+                when (currentDelegate) {
+                    DELEGATE_GPU -> {
+                        if (CompatibilityList().isDelegateSupportedOnThisDevice) {
+                            addDelegate(GpuDelegate())
+                        } else {
+                            objectDetectorListener?.onError("GPU is not supported on this device.")
+                        }
+                    }
+                    DELEGATE_NNAPI -> addDelegate(NnApiDelegate())
+                    DELEGATE_CPU -> { /* Default */ }
+                }
+            }
+            interpreter = Interpreter(FileUtil.loadMappedFile(context, MODEL_NAME), interpreterOptions)
         } catch (e: Exception) {
             objectDetectorListener?.onError("TFLite model failed to load: ${e.message}")
-            Log.e(TAG, "TFLite model failed to load", e)
+            Log.e(TAG, "TFLite failed to load", e)
         }
     }
 
@@ -93,6 +76,7 @@ class ObjectDetectorHelper(
         tensorImage.load(imageBitmap)
         val processedImage = imageProcessor.process(tensorImage)
 
+        // YOLOv8 output shape is [1, 84, 8400] where 84 = 4 (box) + 80 (classes)
         val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, labels.size + 4, OUTPUT_ELEMENTS), DataType.FLOAT32)
         interpreter?.run(processedImage.buffer, outputBuffer.buffer.rewind())
 
@@ -107,6 +91,7 @@ class ObjectDetectorHelper(
         val detections = mutableListOf<DetectionResult>()
         val numClasses = labels.size
 
+        // Transpose the output from [1, 84, 8400] to [8400, 84]
         val transposedOutput = FloatArray(OUTPUT_ELEMENTS * (numClasses + 4))
         for (i in 0 until OUTPUT_ELEMENTS) {
             for (j in 0 until numClasses + 4) {
@@ -192,6 +177,7 @@ class ObjectDetectorHelper(
     companion object {
         const val DELEGATE_CPU = 0
         const val DELEGATE_GPU = 1
+        const val DELEGATE_NNAPI = 2
         const val MODEL_NAME = "yolo11s_float32.tflite"
         const val LABELS_PATH = "labels.txt"
         const val INPUT_SIZE = 640
