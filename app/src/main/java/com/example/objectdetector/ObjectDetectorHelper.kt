@@ -3,14 +3,21 @@ package com.example.objectdetector
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ImageProxy
+import com.google.android.gms.tflite.client.TfLiteInitializationOptions
+import com.google.android.gms.tflite.gpu.support.TfLiteGpu
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.support.common.FileUtil
+import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
+import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
-import org.tensorflow.lite.task.core.BaseOptions
-import org.tensorflow.lite.task.vision.detector.Detection
-import org.tensorflow.lite.task.vision.detector.ObjectDetector
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 
 class ObjectDetectorHelper(
     var threshold: Float = 0.5f,
@@ -21,30 +28,48 @@ class ObjectDetectorHelper(
     val objectDetectorListener: DetectorListener?
 ) {
 
-    private var objectDetector: ObjectDetector? = null
+    private var interpreter: Interpreter? = null
+    private var labels: List<String>
     private val objectTracker = ObjectTracker()
+    private var gpuDelegate: GpuDelegate? = null
 
     init {
+        labels = FileUtil.loadLabels(context, LABELS_PATH)
         setupObjectDetector()
     }
 
     private fun setupObjectDetector() {
-        try {
-            val baseOptionsBuilder = BaseOptions.builder().setNumThreads(numThreads)
-            when (currentDelegate) {
-                DELEGATE_GPU -> baseOptionsBuilder.useGpu()
-                DELEGATE_NNAPI -> baseOptionsBuilder.useNnapi()
-                DELEGATE_CPU -> { /* Default */ }
+        if (currentDelegate == DELEGATE_GPU) {
+            TfLiteGpu.isGpuDelegateAvailable(context).onSuccessTask { gpuAvailable ->
+                if (gpuAvailable) {
+                    val optionsBuilder = TfLiteInitializationOptions.builder()
+                        .setEnableGpuDelegateSupport(true)
+                    TfLiteGpu.initialize(context, optionsBuilder.build()).onSuccessTask {
+                        val interpreterOptions = Interpreter.Options().apply {
+                            addDelegate(GpuDelegate())
+                            setNumThreads(numThreads)
+                        }
+                        createInterpreter(interpreterOptions)
+                    }.addOnFailureListener { e ->
+                        objectDetectorListener?.onError("GPU delegate failed to initialize: ${e.message}")
+                        createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
+                    }
+                } else {
+                    objectDetectorListener?.onError("GPU is not supported on this device.")
+                    createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
+                }
+            }.addOnFailureListener { e ->
+                objectDetectorListener?.onError("GPU compatibility check failed: ${e.message}")
+                createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
             }
+        } else {
+             createInterpreter(Interpreter.Options().apply { setNumThreads(numThreads) })
+        }
+    }
 
-            val optionsBuilder =
-                ObjectDetector.ObjectDetectorOptions.builder()
-                    .setBaseOptions(baseOptionsBuilder.build())
-                    .setScoreThreshold(threshold)
-                    .setMaxResults(maxResults)
-
-            objectDetector = ObjectDetector.createFromFileAndOptions(context, MODEL_NAME, optionsBuilder.build())
-
+    private fun createInterpreter(options: Interpreter.Options) {
+        try {
+            interpreter = Interpreter(FileUtil.loadMappedFile(context, MODEL_NAME), options)
         } catch (e: Exception) {
             objectDetectorListener?.onError("TFLite model failed to load: ${e.message}")
             Log.e(TAG, "TFLite model failed to load", e)
@@ -52,32 +77,109 @@ class ObjectDetectorHelper(
     }
 
     fun detect(imageProxy: ImageProxy) {
-        if (objectDetector == null) {
-            imageProxy.close()
-            return
-        }
+        if (interpreter == null) return
 
         val imageBitmap = imageProxy.toBitmap()
         val rotation = imageProxy.imageInfo.rotationDegrees
         imageProxy.close()
 
-        // The Task Library's ObjectDetector handles normalization and resizing internally.
-        // We just need to handle the rotation manually before passing the image.
         val imageProcessor = ImageProcessor.Builder()
             .add(Rot90Op(-rotation / 90))
+            .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
+            .add(NormalizeOp(0f, 255f))
             .build()
 
-        val tensorImage = imageProcessor.process(TensorImage.fromBitmap(imageBitmap))
+        val tensorImage = TensorImage(DataType.FLOAT32)
+        tensorImage.load(imageBitmap)
+        val processedImage = imageProcessor.process(tensorImage)
 
-        val results: List<Detection>? = objectDetector?.detect(tensorImage)
+        val outputBuffer = TensorBuffer.createFixedSize(intArrayOf(1, labels.size + 4, OUTPUT_ELEMENTS), DataType.FLOAT32)
+        interpreter?.run(processedImage.buffer, outputBuffer.buffer.rewind())
 
-        val detectionResults = results?.map {
-            DetectionResult(it.boundingBox, it.categories.first().label, it.categories.first().score)
-        } ?: emptyList()
-
-        val trackedObjects = objectTracker.update(detectionResults)
+        val rawDetections = processYoloOutput(outputBuffer.floatArray)
+        val finalDetections = nonMaxSuppression(rawDetections)
+        val trackedObjects = objectTracker.update(finalDetections)
 
         objectDetectorListener?.onResults(trackedObjects, imageBitmap.height, imageBitmap.width)
+    }
+
+    private fun processYoloOutput(output: FloatArray): List<DetectionResult> {
+        val detections = mutableListOf<DetectionResult>()
+        val numClasses = labels.size
+
+        val transposedOutput = FloatArray(OUTPUT_ELEMENTS * (numClasses + 4))
+        for (i in 0 until OUTPUT_ELEMENTS) {
+            for (j in 0 until numClasses + 4) {
+                transposedOutput[i * (numClasses + 4) + j] = output[j * OUTPUT_ELEMENTS + i]
+            }
+        }
+
+        for (i in 0 until OUTPUT_ELEMENTS) {
+            val offset = i * (numClasses + 4)
+            val cx = transposedOutput[offset]
+            val cy = transposedOutput[offset + 1]
+            val w = transposedOutput[offset + 2]
+            val h = transposedOutput[offset + 3]
+
+            var maxScore = 0f
+            var classIndex = -1
+            for (j in 0 until numClasses) {
+                val score = transposedOutput[offset + 4 + j]
+                if (score > maxScore) {
+                    maxScore = score
+                    classIndex = j
+                }
+            }
+
+            if (maxScore > threshold) {
+                val x1 = cx - w / 2
+                val y1 = cy - h / 2
+                val x2 = cx + w / 2
+                val y2 = cy + h / 2
+                val box = RectF(x1, y1, x2, y2)
+                if (classIndex != -1) {
+                     detections.add(DetectionResult(box, labels[classIndex], maxScore))
+                }
+            }
+        }
+        return detections
+    }
+
+    private fun nonMaxSuppression(detections: List<DetectionResult>): List<DetectionResult> {
+        val sortedDetections = detections.sortedByDescending { it.score }
+        val result = mutableListOf<DetectionResult>()
+
+        for (detection in sortedDetections) {
+            var shouldAdd = true
+            for (existing in result) {
+                if (detection.label == existing.label && iou(detection.boundingBox, existing.boundingBox) > IOU_THRESHOLD) {
+                    shouldAdd = false
+                    break
+                }
+            }
+            if (shouldAdd) {
+                result.add(detection)
+            }
+            if (result.size >= maxResults) {
+                break
+            }
+        }
+        return result
+    }
+
+    private fun iou(a: RectF, b: RectF): Float {
+        val intersectionX = maxOf(a.left, b.left)
+        val intersectionY = maxOf(a.top, b.top)
+        val intersectionWidth = minOf(a.right, b.right) - intersectionX
+        val intersectionHeight = minOf(a.bottom, b.bottom) - intersectionY
+
+        if (intersectionWidth <= 0 || intersectionHeight <= 0) return 0f
+
+        val intersectionArea = intersectionWidth * intersectionHeight
+        val areaA = (a.right - a.left) * (a.bottom - a.top)
+        val areaB = (b.right - b.left) * (b.bottom - a.top)
+
+        return intersectionArea / (areaA + areaB - intersectionArea)
     }
 
     data class DetectionResult(val boundingBox: RectF, val label: String, val score: Float)
@@ -90,9 +192,11 @@ class ObjectDetectorHelper(
     companion object {
         const val DELEGATE_CPU = 0
         const val DELEGATE_GPU = 1
-        const val DELEGATE_NNAPI = 2
         const val MODEL_NAME = "yolo11s_float32.tflite"
+        const val LABELS_PATH = "labels.txt"
         const val INPUT_SIZE = 640
+        const val OUTPUT_ELEMENTS = 8400
+        const val IOU_THRESHOLD = 0.5f
         private const val TAG = "ObjectDetectorHelper"
     }
 }
